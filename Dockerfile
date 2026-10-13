@@ -60,3 +60,12 @@ RUN echo "instantclient,$ORACLE_HOME" | pecl install oci8-2.2.0 \
 
 # --- Composer binary (brand repos still run their own `composer install`) ---
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+# --- Oracle connection hygiene ---
+# All brands share one Oracle instance, so its `processes` limit is shared too.
+# oci_pconnect() keeps one session per Apache worker; with the defaults
+# (persistent_timeout=-1, workers never recycled) idle sessions pile up forever
+# and caused ORA-12516. Close idle persistent sessions after 60s, keep few idle
+# workers around and recycle workers regularly so their sessions are released.
+RUN echo 'oci8.persistent_timeout = 60' > /usr/local/etc/php/conf.d/zz-oci8.ini \
+    && printf '<IfModule mpm_prefork_module>\n\tStartServers 3\n\tMinSpareServers 2\n\tMaxSpareServers 5\n\tMaxRequestWorkers 150\n\tMaxConnectionsPerChild 500\n</IfModule>\n' > /etc/apache2/mods-available/mpm_prefork.conf
